@@ -9,6 +9,6 @@
 - GNU parallel
 - python with module pandas
 
-**Running the scripts
+**Running the scripts**
 
 Apply the sequence of scripts outlined in dna-seq_code.txt to your nanopore sequencing run
