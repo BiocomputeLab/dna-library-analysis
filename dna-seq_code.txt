@@ -1,0 +1,39 @@
+######## ######## ######## ########
+Software required to run scripts
+######## ######## ######## ########
+
+- guppy_basecaller and guppy_barcoder from nanopore (https://community.nanoporetech.com/downloads)
+- blastn for command line (https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastDocs&DOC_TYPE=Download)
+- awk
+- GNU parallel
+- python with module pandas
+
+
+######## ######## ######## ########
+Data analysis scripts
+######## ######## ######## ########
+
+# basecall
+guppy_basecaller -r -i ./fast5 -s ./fastq -c dna_r9.4.1_450bps_hac.cfg -x "cuda:1"
+
+# demultiplex
+guppy_barcoder -i ./fastq -s demultiplexed --barcode_kits SQK-RBK004
+
+# Pool barcode fastq files and convert to fasta
+for f in ./demultiplexed/barcode*; do cat $f/*.fastq > $f/all.fastq; cat $f/all.fastq | paste - - - - | sed 's/^@/>/g'| cut -f1-2 | tr '\t' '\n' > $f/all.fasta; makeblastdb -in $f/all.fasta -parse_seqids -dbtype nucl; done
+
+# BLASTN alignment to each design
+ls | parallel blastn -db ../../demultiplexed/barcode0X/all.fasta -query {} -out ../../output/barcode0X/{} -outfmt 6 -gapopen 5 -gapextend 2 -reward 2 -penalty -3 -evalue 1 -word_size 4 -max_target_seqs 1000000 -max_hsps 1
+
+# Pool barcode alignments and filter
+for f in ./output/barcode*; do cat * > all.fasta
+awk '$4 >= 80' ./output/barcode0X/all.fasta > ./output/barcode0X_aln.out
+
+# Select best alignments
+./annotate_reads.py ./output/barcode0X_aln.out ./output/barcode0X_best_aln.out linecount
+
+# Randomly select subset of 40000 alignments
+for f in ./output/*best_aln.out; do tail -n +2 $f | shuf -n40000 > ../best_aln_40k/$f; done
+
+# calculate coverage of each assembly
+for f in ./best_aln_40k/*; do calculate_coverage.py $f; done
